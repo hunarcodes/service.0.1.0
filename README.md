@@ -1,0 +1,1 @@
+# gemma-embedder-rust
