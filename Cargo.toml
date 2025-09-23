@@ -4,15 +4,23 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-onnxruntime = "0.0.14"
 prost = "0.14.1"
+ndarray = "0.16.1"
+num_cpus = "1.17.0"
 reqwest = { version = "0.12.23", features = ["json"] }
 serde = "1.0.225"
+tokenizers = { version = "0.21.0", default-features = false, features = ["onig", "esaxx_fast"] }
+ort = { version = "2.0.0-rc.10", default-features = false, features = ["std", "download-binaries", "half", "onednn", "ndarray"] }
+ort-sys = { version = "=2.0.0-rc.10", default-features = false }
 serde_json = "1.0.145"
 tokio = {version = "1.47.1", features = ["full"] }
 tonic = "0.14.2"
 tonic-prost = "0.14.2"
 tonic-reflection = "0.14.2"
+axum = "0.7.5"
+hyper = "1.7.0"
+hyper-util = { version = "0.1", features = ["tokio"] }
+tower = "0.5.2"
 
 [build-dependencies]
 tonic = "0.14.2"
