@@ -8,30 +8,55 @@ use crate::generated::inference::inferencer_server::InferencerServer;
 use crate::inference::inference_batch_processor;
 use crate::services::{AppState, grpc_service::MyInferenceService, http_get_embedding};
 use axum::{Router, routing::post};
-use ort::session::{Session, builder::GraphOptimizationLevel};
-use std::error::Error;
-use std::sync::{Arc, Mutex};
-use tokenizers::{PaddingParams, PaddingStrategy, Tokenizer, TruncationParams, TruncationStrategy};
-use tonic::transport::Server as GrpcServer;
-use tonic_reflection::server::Builder;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
-use tokio::net::TcpListener;
-use tower::ServiceExt;
 use hyper_util::rt::TokioIo;
-
-
+use ort::session::{Session, builder::GraphOptimizationLevel};
+use std::error::Error;
+use std::env;
+use std::sync::{Arc, Mutex};
+use tokenizers::{PaddingParams, PaddingStrategy, Tokenizer, TruncationParams, TruncationStrategy};
+use tokio::net::TcpListener;
+use tonic::transport::Server as GrpcServer;
+use tonic_reflection::server::Builder;
+use tower::ServiceExt;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
-    // ---- 1. Configuration ----
-    let model_path = "model/model_quantized.onnx";
+    let model_path = std::env::var("MODEL_PATH").unwrap_or_else(|_| {
+        eprintln!("MODEL_PATH not set");
+        std::process::exit(1);
+    });
+    println!("Using model: {}", model_path);
+
     let tokenizer_path = "model/tokenizer.json";
-    let max_length = 2048;
+    println!("using tokenizer: {}", tokenizer_path);
+    let max_length: usize = env::var("MAX_TOKENS")
+        .unwrap_or_else(|_| "2048".to_string()) // default if not set
+        .parse()
+        .unwrap_or_else(|_| {
+            eprintln!("MAX_TOKENS must be a number");
+            std::process::exit(1);
+        });
+
+    let max_batch_size: usize = env::var("MAX_BATCH_SIZE")
+    .unwrap_or_else(|_| "32".to_string())
+    .parse()
+    .unwrap_or_else(|_| {
+        eprintln!("MAX_BATCH_SIZE must be a number");
+        std::process::exit(1);
+    });
+
+let max_wait_ms: u64 = env::var("MAX_WAIT_MS")
+    .unwrap_or_else(|_| "5".to_string())
+    .parse()
+    .unwrap_or_else(|_| {
+        eprintln!("MAX_WAIT_MS must be a number");
+        std::process::exit(1);
+    });
     let http_addr = "0.0.0.0:3000";
     let grpc_addr = "0.0.0.0:50051";
 
-    // ---- 2. Load Models and Tokenizer ONCE ----
     println!("Loading models...");
 
     let mut tokenizer = Tokenizer::from_file(tokenizer_path)?;
@@ -56,21 +81,18 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let shared_session = Arc::new(Mutex::new(session));
     println!("Models loaded successfully.");
 
-    // ---- 3. Setup Batching Channel and Background Task ----
     let (inference_sender, inference_receiver) = tokio::sync::mpsc::channel(256);
 
     tokio::spawn(inference_batch_processor(
         inference_receiver,
         shared_tokenizer.clone(),
         shared_session.clone(),
-        32,
-        5,
+        max_batch_size,
+        max_wait_ms
     ));
 
-    // ---- 4. Setup Shared State ----
     let app_state = Arc::new(AppState { inference_sender });
 
-    // ---- 5. HTTP Server (Axum over Hyper HTTP/1.1) ----
     let http_app = Router::new()
         .route("/v1/embed", post(http_get_embedding))
         .with_state(app_state.clone());
@@ -86,10 +108,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
             tokio::spawn(async move {
                 let service = service_fn(move |req| app_clone.clone().oneshot(req));
-                if let Err(err) = http1::Builder::new()
-                    .serve_connection(io, service)
-                    .await
-                {
+                if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
                     eprintln!("HTTP connection error: {:?}", err);
                 }
             });
@@ -99,7 +118,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         Ok::<_, Box<dyn Error + Send + Sync>>(())
     };
 
-    // ---- 6. gRPC Server (Tonic over HTTP/2) ----
     let grpc_svc = InferencerServer::new(MyInferenceService { app_state });
     let reflection_svc = Builder::configure()
         .register_encoded_file_descriptor_set(generated::FILE_DESCRIPTOR_SET)
@@ -116,7 +134,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     println!("gRPC server listening on {}", grpc_addr);
 
-    // ---- 7. Run Both Servers Concurrently ----
     tokio::try_join!(http_future, grpc_future)?;
 
     Ok(())

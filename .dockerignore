@@ -1,0 +1,30 @@
+# Ignore target (compiled junk)
+target
+**/target
+
+# Ignore git history
+.git
+.gitignore
+
+# Ignore local configs
+.env
+*.toml.orig
+*.lock.orig
+
+# Ignore editor/IDE clutter
+.vscode
+.idea
+*.swp
+*.swo
+
+# Ignore OS trash
+.DS_Store
+Thumbs.db
+
+# Ignore build outputs/logs
+*.log
+*.out
+
+# Ignore docker’s own junk if nested builds
+docker-compose*.yml
+Dockerfile*
