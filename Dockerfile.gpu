@@ -1,0 +1,63 @@
+# ------------------------------
+# Stage 1: Builder
+# ------------------------------
+FROM nvidia/cuda:12.2.0-devel-ubuntu22.04 AS builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive \
+    apt-get install -y \
+      curl \
+      build-essential \
+      protobuf-compiler \
+      pkg-config \
+      libssl-dev \
+      git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust
+RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Copy Cargo files first (for dependency caching)
+COPY Cargo.toml Cargo.lock ./
+
+# Create dummy src to pre-build dependencies
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+RUN cargo build --release --features cuda || true
+
+# Copy actual source
+COPY . .
+
+# Build release binary with CUDA enabled
+RUN cargo build --release --features cuda
+
+# ------------------------------
+# Stage 2: Runtime
+# ------------------------------
+FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04 AS runtime
+
+WORKDIR /app
+
+# Runtime dependencies
+RUN apt-get update && apt-get install -y ca-certificates wget && rm -rf /var/lib/apt/lists/*
+
+# Copy compiled binary
+COPY --from=builder /app/target/release/gemma-embedder-rust /app/gemma-embedder-rust
+
+# Copy model download script
+COPY download_models.sh /usr/local/bin/download_models.sh
+RUN chmod +x /usr/local/bin/download_models.sh
+
+# Environment variables
+ENV MODEL_VARIANT=q4
+ENV MAX_TOKENS=2048
+ENV MAX_BATCH_SIZE=32
+ENV MAX_WAIT_MS=5
+
+# Expose service ports
+EXPOSE 3000 50051
+
+# On container start: download models and run
+CMD ["sh", "-c", "download_models.sh && MODEL_PATH=$(ls model/*.onnx) exec ./gemma-embedder-rust"]

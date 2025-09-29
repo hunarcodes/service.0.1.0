@@ -16,7 +16,7 @@ Built on [ONNX Runtime](https://onnxruntime.ai/) with batching and configurable 
 ---
 
 ## Run with Docker
-
+**CPU:**
 ```bash
 docker run -it --rm \
   -p 3000:3000 \
@@ -28,7 +28,19 @@ docker run -it --rm \
   -e MAX_WAIT_MS=5 \
   garvw/gemma-embedder-rust:latest
 ```
-
+**GPU:**
+```bash
+docker run -it --rm \
+  --gpus all \
+  -p 3000:3000 \
+  -p 50051:50051 \
+  -e MODEL_VARIANT=base \
+  -e MODEL_PATH=model/model_base.onnx \
+  -e MAX_TOKENS=2048 \
+  -e MAX_BATCH_SIZE=32 \
+  -e MAX_WAIT_MS=5 \
+  garvw/gemma-embedder-rust:gpu
+```
 The container will download tokenizer + model files at startup using `download_models.sh`.
 
 ---

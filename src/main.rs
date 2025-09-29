@@ -11,6 +11,7 @@ use axum::{Router, routing::post};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
+use ort::execution_providers::CUDAExecutionProvider;
 use ort::session::{Session, builder::GraphOptimizationLevel};
 use std::error::Error;
 use std::env;
@@ -74,9 +75,10 @@ let max_wait_ms: u64 = env::var("MAX_WAIT_MS")
 
     let session = Session::builder()?
         .with_optimization_level(GraphOptimizationLevel::Level3)?
-        .with_intra_threads(num_cpus::get())?
+        .with_execution_providers([CUDAExecutionProvider::default().build()])?
         .commit_from_file(model_path)?;
-
+    
+    println!("Running with CUDA execution provider.");
     let shared_tokenizer = Arc::new(tokenizer);
     let shared_session = Arc::new(Mutex::new(session));
     println!("Models loaded successfully.");
