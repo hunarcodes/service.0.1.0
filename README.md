@@ -1,4 +1,4 @@
-```markdown
+
 # Gemma Embedder Rust
 
 A lightweight, Rust-based embedding service for [Google’s EmbeddingGemma-300M](https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX), served via **HTTP** and **gRPC**, packaged as a small (~176 MB) Docker image.  
@@ -7,8 +7,8 @@ Built on [ONNX Runtime](https://onnxruntime.ai/) with batching and configurable 
 ---
 
 ## Features
-- 🚀 Written in Rust — fast, minimal, no Python bloat.  
-- 📦 Docker image only ~176 MB.  
+- 🚀 Written in Rust — fast and minimalistic
+- 📦 Very small docker images.  
 - ⚙️ Configurable via environment variables (`MODEL_PATH`, `MAX_TOKENS`, etc.).  
 - 🌐 Dual endpoints: HTTP (Axum) + gRPC (Tonic).  
 - 🧵 Batched inference with configurable max batch size and wait time.  
@@ -122,4 +122,3 @@ MAX_WAIT_MS=5 \
 
 EmbeddingGemma weights are licensed under Google’s Gemma Terms of Use.  
 This project provides a service wrapper — you must comply with Google’s terms if you use the models.
-```
