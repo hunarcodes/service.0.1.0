@@ -1,5 +1,5 @@
 
-# EmbeddingGemma Microservice
+# Embedding Gemma Microservice
 
 A lightweight, Rust-based embedding service for [Google’s EmbeddingGemma-300M](https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX), served via **HTTP** and **gRPC**, packaged as a small (~176 MB) Docker image.  
 Built on [ONNX Runtime](https://onnxruntime.ai/) with batching and configurable runtime parameters.
