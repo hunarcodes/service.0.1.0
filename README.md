@@ -1,6 +1,3 @@
-
------
-
 # Embedding Gemma Microservice
 
 A lightweight, high-performance Rust-based microservice for **[Google’s EmbeddingGemma-300M](https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX)**. It serves embeddings via both **HTTP** and **gRPC** and is packaged in small, optimized Docker images for both CPU and GPU.
