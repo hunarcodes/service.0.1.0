@@ -1,6 +1,3 @@
-Of course. Based on all the work we did, the old README is out of date. Here is a completely revised and improved version that reflects the final, working state of your project.
-
-It includes a new "Quick Start" section, clarifies the CPU vs. GPU images, removes redundant environment variables from the examples, and provides correct instructions for building from source.
 
 -----
 
