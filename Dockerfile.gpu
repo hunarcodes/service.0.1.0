@@ -1,63 +1,83 @@
 # ------------------------------
 # Stage 1: Builder
 # ------------------------------
-FROM nvidia/cuda:12.2.0-devel-ubuntu22.04 AS builder
+FROM rust:1.89-bookworm AS builder
+
+# Install build tools, including wget and tar for manual download
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    cmake \
+    pkg-config \
+    libssl-dev \
+    protobuf-compiler \
+    wget \
+    tar \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install build dependencies
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive \
-    apt-get install -y \
-      curl \
-      build-essential \
-      protobuf-compiler \
-      pkg-config \
-      libssl-dev \
-      git \
-    && rm -rf /var/lib/apt/lists/*
+# --- Manually Download and Extract ONNX Runtime ---
+# Improved to use the ARG variable consistently
+ARG ORT_VERSION=1.22.0
+RUN wget https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-gpu-${ORT_VERSION}.tgz && \
+    tar -zxvf onnxruntime-linux-x64-gpu-${ORT_VERSION}.tgz
 
-# Install Rust
-RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
 
-# Copy Cargo files first (for dependency caching)
+# Build the application
 COPY Cargo.toml Cargo.lock ./
-
-# Create dummy src to pre-build dependencies
 RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release --features cuda || true
-
-# Copy actual source
-COPY . .
-
-# Build release binary with CUDA enabled
-RUN cargo build --release --features cuda
+RUN cargo build --release
+COPY src ./src
+COPY build.rs ./build.rs
+COPY proto ./proto
+RUN touch src/main.rs
+RUN cargo build --release
 
 # ------------------------------
 # Stage 2: Runtime
 # ------------------------------
-FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04 AS runtime
+FROM nvidia/cuda:12.3.2-runtime-ubuntu22.04 AS runtime
 
 WORKDIR /app
 
-# Runtime dependencies
-RUN apt-get update && apt-get install -y ca-certificates wget && rm -rf /var/lib/apt/lists/*
+# Install runtime dependencies and the correct cuDNN version
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    wget \
+    && wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb \
+    && dpkg -i cuda-keyring_1.1-1_all.deb \
+    && rm cuda-keyring_1.1-1_all.deb \
+    && apt-get update \
+    # --- THIS IS THE FIX ---
+    # Install cuDNN 9 for CUDA 12, which is what ONNX Runtime v1.22 requires.
+    && apt-get install -y --no-install-recommends libcudnn9-cuda-12 \
+    # -----------------------
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy compiled binary
+# Create a dedicated directory for the ONNX libraries
+RUN mkdir -p /onnxruntime/lib
+
+# Copy your compiled application
 COPY --from=builder /app/target/release/gemma-embedder-rust /app/gemma-embedder-rust
 
-# Copy model download script
+# Copy the manually downloaded .so files
+COPY --from=builder /app/onnxruntime-linux-x64-gpu-*/lib/*.so /onnxruntime/lib/
+
+# Set the library path so the system can find both CUDA and ONNX libraries
+ENV LD_LIBRARY_PATH=/onnxruntime/lib:/usr/local/cuda/lib64
+
+# Copy model script and make it executable
 COPY download_models.sh /usr/local/bin/download_models.sh
 RUN chmod +x /usr/local/bin/download_models.sh
 
-# Environment variables
+# Set environment variables for the application
+ENV EXECUTION_PROVIDER=gpu
 ENV MODEL_VARIANT=q4
 ENV MAX_TOKENS=2048
 ENV MAX_BATCH_SIZE=32
 ENV MAX_WAIT_MS=5
 
-# Expose service ports
+# Expose the application ports
 EXPOSE 3000 50051
 
-# On container start: download models and run
+# Define the command to run the application
 CMD ["sh", "-c", "download_models.sh && MODEL_PATH=$(ls model/*.onnx) exec ./gemma-embedder-rust"]

@@ -11,7 +11,7 @@ use axum::{Router, routing::post};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
-use ort::execution_providers::CUDAExecutionProvider;
+use ort::execution_providers::{CUDAExecutionProvider, CPUExecutionProvider, ExecutionProvider};
 use ort::session::{Session, builder::GraphOptimizationLevel};
 use std::error::Error;
 use std::env;
@@ -21,6 +21,7 @@ use tokio::net::TcpListener;
 use tonic::transport::Server as GrpcServer;
 use tonic_reflection::server::Builder;
 use tower::ServiceExt;
+
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -72,13 +73,31 @@ let max_wait_ms: u64 = env::var("MAX_WAIT_MS")
     };
     tokenizer.with_padding(Some(padding_params));
     tokenizer.with_truncation(Some(truncation_params));
-
-    let session = Session::builder()?
-        .with_optimization_level(GraphOptimizationLevel::Level3)?
-        .with_execution_providers([CUDAExecutionProvider::default().build()])?
-        .commit_from_file(model_path)?;
     
-    println!("Running with CUDA execution provider.");
+    let provider = env::var("EXECUTION_PROVIDER").unwrap_or_else(|_| "cpu".to_string());
+    println!("Attempting to load model using `{}` provider...", provider);
+
+    let session = if provider.to_lowercase() == "gpu" {
+        // GPU PATH: This code will only run if EXECUTION_PROVIDER is 'gpu'
+        if !CUDAExecutionProvider::default().is_available()? {
+            // Hard exit if GPU is requested but not found.
+            panic!("FATAL: EXECUTION_PROVIDER set to 'gpu' but no CUDA device is available or configured correctly.");
+        }
+        println!("CUDA is available, creating GPU session.");
+        Session::builder()?
+            .with_optimization_level(GraphOptimizationLevel::Level1)? // safer optimization level
+            .with_execution_providers([CUDAExecutionProvider::default().build()])?
+            .commit_from_file(&model_path)?
+    } else {
+        // CPU PATH: This is the default
+        println!("Creating CPU session.");
+        Session::builder()?
+            .with_optimization_level(GraphOptimizationLevel::Level3)? // CPU can use more aggressive optimization
+            .with_execution_providers([CPUExecutionProvider::default().build()])?
+            .commit_from_file(&model_path)?
+    };
+
+    
     let shared_tokenizer = Arc::new(tokenizer);
     let shared_session = Arc::new(Mutex::new(session));
     println!("Models loaded successfully.");

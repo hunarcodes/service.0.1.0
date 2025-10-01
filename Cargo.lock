@@ -615,7 +615,6 @@ dependencies = [
  "ndarray",
  "num_cpus",
  "ort",
- "ort-sys",
  "prost",
  "reqwest",
  "serde",
